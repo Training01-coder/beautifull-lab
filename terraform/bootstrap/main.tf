@@ -7,11 +7,16 @@ data "aws_route53_zone" "site" {
 }
 
 locals {
-  account_id   = data.aws_caller_identity.current.account_id
-  subject_base = "repo:${var.github_owner}/${var.github_repo}"
-  audience     = "sts.amazonaws.com"
-  oidc_host    = "token.actions.githubusercontent.com"
-  oidc_arn     = "arn:aws:iam::${local.account_id}:oidc-provider/${local.oidc_host}"
+  account_id = data.aws_caller_identity.current.account_id
+  # Format immuable si les IDs sont fournis, sinon ancien format par noms.
+  subject_base = (
+    var.github_owner_id != "" && var.github_repo_id != ""
+    ? "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}"
+    : "repo:${var.github_owner}/${var.github_repo}"
+  )
+  audience  = "sts.amazonaws.com"
+  oidc_host = "token.actions.githubusercontent.com"
+  oidc_arn  = "arn:aws:iam::${local.account_id}:oidc-provider/${local.oidc_host}"
 
   # Conventions partagees avec .github/workflows/deploy.yml : le workflow
   # reconstruit ces noms a partir de vars.AWS_ACCOUNT_ID. Ne pas les changer seuls.

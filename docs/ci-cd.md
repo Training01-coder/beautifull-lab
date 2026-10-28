@@ -128,6 +128,7 @@ la branche par défaut redéploie.
 | `bootstrap apply` : `no matching Route 53 Hosted Zone found` | `domain_name` ne correspond à aucune zone publique de ce compte AWS. |
 | `bootstrap apply` : `BucketAlreadyExists` | Rarissime (nom basé sur l'ID du compte). Vérifier qu'on est sur le bon compte AWS. |
 | `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `github_owner` / `github_repo` du tfvars ≠ dépôt réel (attention à la casse), ou environnement GitHub pas nommé exactement `production`. Corriger puis relancer `terraform apply` dans le bootstrap. |
+| `configure-aws-credentials` boucle sur `Assuming role with OIDC` | Même cause que ci-dessus. CloudTrail (`AssumeRoleWithWebIdentity`, `AccessDenied`) montre le `sub` réel. S'il contient des `@<id>` (dépôt créé après le 15/07/2026), renseigner `github_owner_id` / `github_repo_id` dans le tfvars du bootstrap et relancer `terraform apply`. |
 | Le job `deploy` ne se lance pas après un push | Le push n'est pas sur la branche par défaut du dépôt, ou le workflow est désactivé (fork : étape 4c). |
 | Le site ne répond pas en HTTPS | Attendre 3 min. Puis vérifier que les NS du domaine pointent bien vers la zone Route 53. |
 
