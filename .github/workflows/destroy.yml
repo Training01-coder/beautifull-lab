@@ -1,0 +1,113 @@
+name: destroy-site
+
+# Destruction MANUELLE du site (Terraform principal, dossier terraform/).
+# Ne touche jamais au bootstrap (OIDC, roles, bucket de state) : celui-ci se
+# detruit en local, en dernier (voir docs/ci-cd.md, "Nettoyage").
+#
+# Garde-fous :
+#   1. champ "confirm" : il faut taper exactement "destroy"
+#   2. branche par defaut uniquement (main OU master)
+#   3. approbation de l'environnement GitHub "production"
+#
+# Attention : un push ulterieur sur la branche par defaut recree le site
+# (workflow build-and-deploy).
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tape "destroy" pour confirmer la destruction du site'
+        required: true
+        type: string
+
+# Authentification AWS par OIDC : aucun secret d'acces IAM stocke dans GitHub.
+permissions:
+  id-token: write # obtenir le token OIDC
+  contents: read # checkout du code
+
+# Meme groupe que build-and-deploy : jamais un apply et un destroy en parallele.
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  # Conventions fixees par terraform/bootstrap (memes noms dans chaque compte).
+  ROLE_DEPLOY: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+  TF_STATE_BUCKET: bricoshop-tfstate-${{ vars.AWS_ACCOUNT_ID }}
+  TF_VERSION: 1.11.4
+  # Variables du Terraform principal (necessaires au plan -destroy).
+  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+  TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+  TF_VAR_subdomain: ${{ vars.SUBDOMAIN || 'app' }}
+
+jobs:
+  # ------------------------------------------- verifications (sans AWS)
+  check:
+    name: Verifier la confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirmation, branche et configuration
+        env:
+          # Passe par l'env (et non par interpolation dans le script) : evite
+          # le risque d'injection de script via le champ saisi.
+          CONFIRM: ${{ inputs.confirm }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          REGION: ${{ vars.AWS_REGION }}
+          DOMAIN: ${{ vars.DOMAIN_NAME }}
+        run: |
+          ok=true
+          if [ "$CONFIRM" != "destroy" ]; then
+            echo "::error::Confirmation invalide : tape exactement 'destroy' dans le champ confirm."; ok=false
+          fi
+          if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "::error::Lancer ce workflow depuis la branche par defaut ($DEFAULT_BRANCH), pas depuis '$REF_NAME'."; ok=false
+          fi
+          [ -n "$ACCOUNT_ID" ] || { echo "::error::Variable GitHub AWS_ACCOUNT_ID manquante (voir docs/ci-cd.md)"; ok=false; }
+          [ -n "$REGION" ]     || { echo "::error::Variable GitHub AWS_REGION manquante (voir docs/ci-cd.md)"; ok=false; }
+          [ -n "$DOMAIN" ]     || { echo "::error::Variable GitHub DOMAIN_NAME manquante (voir docs/ci-cd.md)"; ok=false; }
+          $ok
+
+  # ------------------------------------------------------------- destroy
+  destroy:
+    name: Terraform destroy (production)
+    needs: check
+    runs-on: ubuntu-latest
+    # Approbation requise ET condition de confiance OIDC du role deploy
+    # (sub = ...:environment:production).
+    environment: production
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configure AWS credentials (OIDC, role deploy)
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ env.ROLE_DEPLOY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: >-
+          terraform init -input=false
+          -backend-config="bucket=$TF_STATE_BUCKET"
+          -backend-config="region=$AWS_REGION"
+
+      - name: Terraform plan -destroy
+        run: terraform plan -destroy -no-color -input=false -out=tfplan
+
+      - name: Terraform apply (destroy)
+        run: terraform apply -no-color -input=false tfplan
+
+      - name: Resume
+        run: |
+          echo "### Site detruit : https://${TF_VAR_subdomain}.${TF_VAR_domain_name}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Le bootstrap (OIDC, roles, bucket de state) est conserve." >> "$GITHUB_STEP_SUMMARY"
+          echo "Un push sur la branche par defaut recreera le site." >> "$GITHUB_STEP_SUMMARY"

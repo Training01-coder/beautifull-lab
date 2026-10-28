@@ -314,12 +314,20 @@ resource "aws_iam_role_policy" "deploy_infra" {
         ]
       },
       {
+        # DescribeLogGroups est une action "list" : AWS l'evalue sur
+        # log-group::log-stream: (niveau compte), pas sur l'ARN du log group.
+        # Lecture seule, bornee a la region et au compte.
+        Sid      = "CloudWatchLogsDescribe"
+        Effect   = "Allow"
+        Action   = ["logs:DescribeLogGroups"]
+        Resource = "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:*"
+      },
+      {
         Sid    = "CloudWatchLogsAppGroup"
         Effect = "Allow"
         Action = [
           "logs:CreateLogGroup",
           "logs:DeleteLogGroup",
-          "logs:DescribeLogGroups",
           "logs:PutRetentionPolicy",
           "logs:DeleteRetentionPolicy",
           "logs:TagResource",

@@ -157,8 +157,22 @@ run CI en cours.
 
 Dans cet ordre (le state du site est dans le bucket que supprime le bootstrap) :
 
+**1. Le site, depuis le pipeline** (workflow [`destroy.yml`](../.github/workflows/destroy.yml)) :
+
+1. *Actions* → colonne de gauche → **destroy-site** → *Run workflow*.
+2. Branche : la branche par défaut (`main` ou `master`). Champ **confirm** : taper `destroy`.
+3. Le job `destroy` attend ton approbation : *Review deployments* → `production` → *Approve and deploy*.
+4. Le step *Terraform plan -destroy* liste les ressources supprimées (EC2, EIP, SG, rôle IAM,
+   bucket app, log group, enregistrement DNS).
+
+> Un push ultérieur sur la branche par défaut **recrée le site** (workflow `build-and-deploy`).
+> Pratique pour la session suivante, mais à garder en tête.
+
+Alternative locale (après l'`init` ci-dessus) : `cd terraform && terraform destroy`.
+
+**2. Le bootstrap, en local uniquement** (le pipeline ne peut pas supprimer son propre rôle) :
+
 ```bash
-cd terraform            && terraform destroy   # le site (après l'init ci-dessus)
 cd terraform/bootstrap  && terraform destroy   # OIDC, rôles, bucket de state
 ```
 
