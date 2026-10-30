@@ -2,9 +2,27 @@
 # Tout le reste (bucket de state, ARN des roles, zone Route 53) en est deduit.
 
 variable "aws_region" {
-  description = "Region AWS du participant (ex: eu-west-1)"
+  description = "Region AWS (forcee : eu-west-1)"
   type        = string
   default     = "eu-west-1"
+
+  validation {
+    condition     = var.aws_region == "eu-west-1"
+    error_message = "La region est forcee a eu-west-1."
+  }
+}
+
+# Initiales du participant : prefixe de chaque nom de ressource (compte AWS partage).
+# Doit rester identique a PREFIX dans .github/workflows/*.yml.
+variable "prefix" {
+  description = "Initiales du participant, prefixe des noms de ressources (ex: aec)"
+  type        = string
+  default     = "aec"
+
+  validation {
+    condition     = can(regex("^[a-z]{2,6}$", var.prefix))
+    error_message = "prefix : 2 a 6 lettres minuscules."
+  }
 }
 
 variable "github_owner" {
@@ -40,9 +58,9 @@ variable "domain_name" {
 }
 
 variable "subdomain" {
-  description = "Sous-domaine du site (app => app.<domain_name>)"
+  description = "Sous-domaine du site (aec => aec.<domain_name>)"
   type        = string
-  default     = "app"
+  default     = "aec"
 }
 
 variable "create_oidc_provider" {

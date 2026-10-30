@@ -18,19 +18,20 @@ locals {
   oidc_host = "token.actions.githubusercontent.com"
   oidc_arn  = "arn:aws:iam::${local.account_id}:oidc-provider/${local.oidc_host}"
 
-  # Conventions partagees avec .github/workflows/deploy.yml : le workflow
-  # reconstruit ces noms a partir de vars.AWS_ACCOUNT_ID. Ne pas les changer seuls.
-  state_bucket     = "bricoshop-tfstate-${local.account_id}"
-  role_plan_name   = "github-actions-plan"
-  role_deploy_name = "github-actions-deploy"
+  # Conventions partagees avec .github/workflows/*.yml : le workflow
+  # reconstruit ces noms a partir de PREFIX et vars.AWS_ACCOUNT_ID. Ne pas les changer seuls.
+  p                = var.prefix
+  state_bucket     = "${local.p}-bricoshop-tfstate-${local.account_id}"
+  role_plan_name   = "${local.p}-github-actions-plan"
+  role_deploy_name = "${local.p}-github-actions-deploy"
   environment      = "production"
 
   # Ressources du Terraform principal (name_prefix / bucket_prefix => suffixe
-  # aleatoire inconnu, d'ou les wildcards sur le prefixe).
-  app_bucket_arn  = "arn:aws:s3:::secagent-java-app-*"
-  ec2_role_arn    = "arn:aws:iam::${local.account_id}:role/secagent-java-ec2-*"
-  ec2_profile_arn = "arn:aws:iam::${local.account_id}:instance-profile/secagent-java-ec2-*"
-  log_group_arn   = "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/bricoshop/app"
+  # aleatoire inconnu, d'ou les wildcards sur le prefixe). Memes noms que terraform/main.tf.
+  app_bucket_arn  = "arn:aws:s3:::${local.p}-secagent-java-app-*"
+  ec2_role_arn    = "arn:aws:iam::${local.account_id}:role/${local.p}-secagent-java-ec2-*"
+  ec2_profile_arn = "arn:aws:iam::${local.account_id}:instance-profile/${local.p}-secagent-java-ec2-*"
+  log_group_arn   = "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/${local.p}/bricoshop/app"
   zone_arn        = "arn:aws:route53:::hostedzone/${data.aws_route53_zone.site.zone_id}"
 }
 
@@ -123,7 +124,7 @@ resource "aws_iam_role_policy_attachment" "plan_readonly" {
 
 # Acces minimal au bucket de state pour le refresh du plan.
 resource "aws_iam_role_policy" "plan_state" {
-  name = "acces-state-plan"
+  name = "${local.p}-acces-state-plan"
   role = aws_iam_role.plan.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -182,7 +183,7 @@ resource "aws_iam_role" "deploy" {
 }
 
 resource "aws_iam_role_policy" "deploy_state" {
-  name = "acces-state-deploy"
+  name = "${local.p}-acces-state-deploy"
   role = aws_iam_role.deploy.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -205,7 +206,7 @@ resource "aws_iam_role_policy" "deploy_state" {
 
 # Politique "infrastructure" : scopée aux services et ARN du Terraform principal.
 resource "aws_iam_role_policy" "deploy_infra" {
-  name = "infra-moindre-privilege"
+  name = "${local.p}-infra-moindre-privilege"
   role = aws_iam_role.deploy.id
   policy = jsonencode({
     Version = "2012-10-17"

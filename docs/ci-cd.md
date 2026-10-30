@@ -5,12 +5,21 @@ Chaque participant déploie **sa propre copie** du site, dans **son compte AWS**
 dans GitHub : le pipeline s'authentifie par **OIDC** (identifiants temporaires).
 
 ```
-pull request      ──> build + terraform plan   (rôle github-actions-plan, lecture seule)
-push branche par défaut ──> build + plan + apply (rôle github-actions-deploy, après approbation)
+pull request            ──> build + terraform plan    (rôle aec-github-actions-plan, lecture seule)
+push branche par défaut ──> build + plan + apply      (rôle aec-github-actions-deploy, après approbation)
+Run workflow (manuel)   ──> build + destroy + plan + apply  (case destroy_first, cochée par défaut)
 ```
 
-**Tu ne renseignes tes valeurs qu'à deux endroits** : un fichier `terraform.tfvars` sur ta
-machine, et 4 variables dans GitHub. Le reste du dépôt ne change pas.
+Configuration figée dans les workflows : région **eu-west-1**, préfixe **`aec`** sur chaque
+ressource, site **https://aec.alpha-awslab26.click**. Une seule variable GitHub :
+`AWS_ACCOUNT_ID`.
+
+En local, le profil AWS utilisé est `formation` :
+
+```powershell
+$env:AWS_PROFILE = "formation"   # session courante
+[Environment]::SetEnvironmentVariable("AWS_PROFILE", "formation", "User")   # permanent
+```
 
 ---
 
@@ -64,8 +73,9 @@ terraform apply      # répondre "yes"
 ```
 
 Il crée dans **ton** compte AWS : la confiance OIDC avec GitHub, le bucket du state Terraform
-(`bricoshop-tfstate-<account_id>`) et les deux rôles IAM du pipeline. Il vérifie aussi que ta
-zone Route 53 existe.
+(`aec-bricoshop-tfstate-<account_id>`) et les deux rôles IAM du pipeline
+(`aec-github-actions-plan`, `aec-github-actions-deploy`). Il vérifie aussi que ta zone Route 53
+existe.
 
 À la fin, il affiche ce qu'il faut recopier dans GitHub :
 
@@ -73,11 +83,8 @@ zone Route 53 existe.
 github_environment = "production"
 github_variables = {
   "AWS_ACCOUNT_ID" = "123456789012"
-  "AWS_REGION"     = "eu-west-1"
-  "DOMAIN_NAME"    = "participant42.click"
-  "SUBDOMAIN"      = "app"
 }
-site_url = "https://app.participant42.click"
+site_url = "https://aec.alpha-awslab26.click"
 ```
 
 (Pour le réafficher plus tard : `terraform output`.)
@@ -87,8 +94,9 @@ site_url = "https://app.participant42.click"
 Dans ton dépôt GitHub :
 
 **a) Variables** — *Settings → Secrets and variables → Actions → onglet **Variables** →
-New repository variable*. Crée les 4 variables de `github_variables`, avec **exactement** ces
-noms et valeurs. Ce sont des *Variables*, pas des *Secrets* : rien de sensible.
+New repository variable*. Crée `AWS_ACCOUNT_ID` avec la valeur de `github_variables`.
+C'est une *Variable*, pas un *Secret* : rien de sensible. Les anciennes variables `AWS_REGION`,
+`DOMAIN_NAME` et `SUBDOMAIN` ne sont plus lues (valeurs figées dans les workflows).
 
 **b) Environnement** — *Settings → Environments → New environment* → nom **`production`**
 (exactement). Coche **Required reviewers** et ajoute-toi : chaque déploiement attendra ton
@@ -115,7 +123,12 @@ curl https://app.participant42.click/health
 ```
 
 Ensuite : toute **pull request** affiche le `terraform plan` en commentaire ; tout **merge** sur
-la branche par défaut redéploie.
+la branche par défaut redéploie (sans destroy).
+
+*Actions → build-and-deploy → Run workflow* : la case **destroy_first** (cochée par défaut)
+détruit le site avant de le recréer. Chaque recréation redemande un certificat Let's Encrypt
+(limite : **5 par semaine** pour `aec.alpha-awslab26.click`). Décoche la case pour un simple
+redéploiement.
 
 ---
 
@@ -141,7 +154,7 @@ Le pipeline suffit. Pour travailler en local sur le même state que la CI :
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars   # mêmes domain_name / subdomain / aws_region
-terraform init -backend-config="bucket=bricoshop-tfstate-<account_id>" -backend-config="region=<region>"
+terraform init -backend-config="bucket=aec-bricoshop-tfstate-<account_id>" -backend-config="region=eu-west-1"
 ```
 
 La commande `init` exacte est donnée par `terraform output local_init_command` dans
@@ -191,8 +204,11 @@ chaque compte, c'est ce qui permet de n'avoir que 4 variables :
 
 | Convention | Valeur |
 |---|---|
-| Rôles IAM | `github-actions-plan`, `github-actions-deploy` |
-| Bucket de state | `bricoshop-tfstate-<account_id>` |
+| Préfixe (initiales) | `aec` : `prefix` des tfvars, `PREFIX` / `TF_VAR_prefix` des workflows |
+| Rôles IAM | `aec-github-actions-plan`, `aec-github-actions-deploy` |
+| Bucket de state | `aec-bricoshop-tfstate-<account_id>` |
+| Ressources du site | `aec-secagent-java-*` (EC2, SG, rôle, bucket), log group `/aec/bricoshop/app` |
+| Région / site | `eu-west-1` / `aec.alpha-awslab26.click` |
 | Clé du state | `bricoshop/terraform.tfstate` ([`terraform/backend.tf`](../terraform/backend.tf)) |
 | Environnement GitHub | `production` |
 | Version Terraform en CI | `TF_VERSION` dans le workflow |
@@ -201,6 +217,6 @@ Sécurité : le rôle plan n'est assumable que depuis une **pull request** du d�
 le rôle deploy que depuis son environnement **`production`** (conditions `sub` exactes + `aud =
 sts.amazonaws.com`, jamais `repo:*`). Le rôle deploy n'a pas `AdministratorAccess` : sa
 politique ne couvre que les ressources du projet (EC2/SG/EIP, rôle et instance-profile
-`secagent-java-ec2-*`, buckets du projet, log group `/bricoshop/app`, **la seule zone Route 53
+`aec-secagent-java-ec2-*`, buckets `aec-secagent-java-app-*`, log group `/aec/bricoshop/app`, **la seule zone Route 53
 du participant**). Si tu ajoutes une ressource au Terraform principal, étends cette politique
 puis fais réappliquer le bootstrap.

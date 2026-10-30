@@ -3,16 +3,23 @@ name: build-and-deploy
 # PR                         -> build + terraform plan  (role lecture seule, OIDC)
 # push sur la branche par defaut (main OU master) -> build + plan + apply
 #                               (role deploy, environnement "production")
+# Run workflow (manuel)      -> build + DESTROY + plan + apply
+#                               (case "destroy_first" cochee par defaut)
 #
-# Aucune valeur propre a un participant ici : tout vient des variables GitHub
-# (Settings > Secrets and variables > Actions > Variables), affichees par le
-# bootstrap (terraform output github_variables) :
-#   AWS_ACCOUNT_ID, AWS_REGION, DOMAIN_NAME, SUBDOMAIN (optionnel, defaut "app")
+# Region, domaine, sous-domaine et prefixe (initiales "aec") sont fixes ci-dessous.
+# Seule variable GitHub requise (Settings > Secrets and variables > Actions > Variables) :
+#   AWS_ACCOUNT_ID (affichee par le bootstrap : terraform output github_variables)
 on:
   pull_request:
   push:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      destroy_first:
+        description: "Detruire le site existant avant de le redeployer"
+        required: false
+        type: boolean
+        default: true
 
 # Authentification AWS par OIDC : aucun secret d'acces IAM stocke dans GitHub.
 permissions:
@@ -26,16 +33,21 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  # Conventions fixees par terraform/bootstrap (memes noms dans chaque compte).
-  ROLE_PLAN: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-plan
-  ROLE_DEPLOY: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-deploy
-  TF_STATE_BUCKET: bricoshop-tfstate-${{ vars.AWS_ACCOUNT_ID }}
+  # Region forcee (aussi verrouillee par une validation dans les variables Terraform).
+  AWS_REGION: eu-west-1
+  # Initiales du participant : prefixe de chaque nom de ressource.
+  # Doit rester identique a "prefix" dans terraform/bootstrap/terraform.tfvars.
+  PREFIX: aec
+  # Conventions fixees par terraform/bootstrap.
+  ROLE_PLAN: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/aec-github-actions-plan
+  ROLE_DEPLOY: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/aec-github-actions-deploy
+  TF_STATE_BUCKET: aec-bricoshop-tfstate-${{ vars.AWS_ACCOUNT_ID }}
   TF_VERSION: 1.11.4
   # Variables du Terraform principal.
-  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
-  TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
-  TF_VAR_subdomain: ${{ vars.SUBDOMAIN || 'app' }}
+  TF_VAR_aws_region: eu-west-1
+  TF_VAR_prefix: aec
+  TF_VAR_domain_name: alpha-awslab26.click
+  TF_VAR_subdomain: aec # => https://aec.alpha-awslab26.click
 
 jobs:
   # ------------------------------------------------------------------ build
@@ -46,13 +58,9 @@ jobs:
       - name: Verifier la configuration GitHub
         env:
           ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-          REGION: ${{ vars.AWS_REGION }}
-          DOMAIN: ${{ vars.DOMAIN_NAME }}
         run: |
           ok=true
           [ -n "$ACCOUNT_ID" ] || { echo "::error::Variable GitHub AWS_ACCOUNT_ID manquante (voir docs/ci-cd.md)"; ok=false; }
-          [ -n "$REGION" ]     || { echo "::error::Variable GitHub AWS_REGION manquante (voir docs/ci-cd.md)"; ok=false; }
-          [ -n "$DOMAIN" ]     || { echo "::error::Variable GitHub DOMAIN_NAME manquante (voir docs/ci-cd.md)"; ok=false; }
           if [ -n "$ACCOUNT_ID" ] && ! [[ "$ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
             echo "::error::AWS_ACCOUNT_ID doit faire 12 chiffres (recu : '$ACCOUNT_ID')"; ok=false
           fi
@@ -197,6 +205,12 @@ jobs:
 
       - name: Terraform validate
         run: terraform validate -no-color
+
+      # Phase DESTROY : uniquement sur lancement manuel (Run workflow), case cochee.
+      # Jamais sur un push ni une PR.
+      - name: Terraform destroy (phase prealable)
+        if: github.event_name == 'workflow_dispatch' && inputs.destroy_first
+        run: terraform destroy -auto-approve -no-color -input=false
 
       - name: Terraform plan
         run: terraform plan -no-color -input=false -out=tfplan

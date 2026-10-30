@@ -17,7 +17,7 @@ provider "aws" {
   default_tags {
     tags = {
       Project = "secagent-java-lab"
-      Owner   = "formation"
+      Owner   = var.prefix
       Usage   = "ci-bootstrap"
     }
   }

@@ -1,11 +1,10 @@
 # A recopier tel quel dans GitHub : Settings > Secrets and variables > Actions > Variables
 output "github_variables" {
   description = "Variables GitHub Actions a creer (nom = valeur)"
+  # Region, domaine, sous-domaine et prefixe sont fixes dans les workflows :
+  # seul l'ID du compte reste a declarer dans GitHub.
   value = {
     AWS_ACCOUNT_ID = local.account_id
-    AWS_REGION     = var.aws_region
-    DOMAIN_NAME    = var.domain_name
-    SUBDOMAIN      = var.subdomain
   }
 }
 

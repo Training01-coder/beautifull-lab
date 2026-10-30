@@ -30,15 +30,17 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  # Conventions fixees par terraform/bootstrap (memes noms dans chaque compte).
-  ROLE_DEPLOY: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-deploy
-  TF_STATE_BUCKET: bricoshop-tfstate-${{ vars.AWS_ACCOUNT_ID }}
+  # Memes valeurs forcees que build-and-deploy (deploy.yml).
+  AWS_REGION: eu-west-1
+  PREFIX: aec
+  ROLE_DEPLOY: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/aec-github-actions-deploy
+  TF_STATE_BUCKET: aec-bricoshop-tfstate-${{ vars.AWS_ACCOUNT_ID }}
   TF_VERSION: 1.11.4
   # Variables du Terraform principal (necessaires au plan -destroy).
-  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
-  TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
-  TF_VAR_subdomain: ${{ vars.SUBDOMAIN || 'app' }}
+  TF_VAR_aws_region: eu-west-1
+  TF_VAR_prefix: aec
+  TF_VAR_domain_name: alpha-awslab26.click
+  TF_VAR_subdomain: aec
 
 jobs:
   # ------------------------------------------- verifications (sans AWS)
@@ -54,8 +56,6 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-          REGION: ${{ vars.AWS_REGION }}
-          DOMAIN: ${{ vars.DOMAIN_NAME }}
         run: |
           ok=true
           if [ "$CONFIRM" != "destroy" ]; then
@@ -65,8 +65,6 @@ jobs:
             echo "::error::Lancer ce workflow depuis la branche par defaut ($DEFAULT_BRANCH), pas depuis '$REF_NAME'."; ok=false
           fi
           [ -n "$ACCOUNT_ID" ] || { echo "::error::Variable GitHub AWS_ACCOUNT_ID manquante (voir docs/ci-cd.md)"; ok=false; }
-          [ -n "$REGION" ]     || { echo "::error::Variable GitHub AWS_REGION manquante (voir docs/ci-cd.md)"; ok=false; }
-          [ -n "$DOMAIN" ]     || { echo "::error::Variable GitHub DOMAIN_NAME manquante (voir docs/ci-cd.md)"; ok=false; }
           $ok
 
   # ------------------------------------------------------------- destroy
